@@ -44,3 +44,25 @@ test("character details keep numeric values and explanations legible on cream pa
   assert.ok(Number(style(".gc-stats b").fontWeight) >= 700, "Attribute numbers use bold type");
   assert.equal(style(".modal-btns .sub").textShadow, "none", "Costs do not have blurry dark shadows");
 });
+
+test("roster controls and locked-character labels retain readable colors and touch targets", t => {
+  const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+  const dom = new JSDOM(html);
+  t.after(() => dom.window.close());
+  const d = dom.window.document;
+  const sheet = d.createElement("style");
+  sheet.textContent = css;
+  d.head.appendChild(sheet);
+  d.getElementById("owned-list").innerHTML = `<article class="card r-R card-locked"><button class="roster-detail"><span class="name">未获得角色<i>未获得</i></span><span class="roster-traits">R · 木 · 守护</span></button><button class="quick-toggle">+</button></article>`;
+  const style = selector => dom.window.getComputedStyle(d.querySelector(selector));
+  for (const selector of [".roster-tools label", "#roster-search", "#roster-status", ".roster-reset", "#squad-status", ".team-tip"]) {
+    assert.ok(contrast(style(selector).color, "rgb(248, 233, 219)") >= 4.5, `${selector} uses readable ink on paper`);
+  }
+  for (const selector of ["#owned-list .name", "#owned-list .name i", ".roster-traits"]) {
+    assert.ok(contrast(style(selector).color, "rgb(52, 34, 20)") >= 4.5, `${selector} remains legible over its dark strip`);
+  }
+  assert.ok(parseFloat(style("#roster-search").minHeight) >= 44);
+  assert.ok(parseFloat(style("#roster-status").minHeight) >= 44);
+  assert.ok(parseFloat(style("#owned-list .quick-toggle").width) >= 44);
+  assert.ok(parseFloat(style("#owned-list .quick-toggle").height) >= 44);
+});

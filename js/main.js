@@ -14,6 +14,7 @@ function lockGame(message) {
   document.getElementById("auth-status").textContent = message;
   document.getElementById("auth-actions").classList.toggle("hidden", Store.connecting);
   closeModal(true);
+  clearRoster();
   document.getElementById("summon-fx").classList.add("hidden");
   if (BAT) BAT.abort = true;
   BAT = null;
@@ -67,6 +68,17 @@ document.querySelectorAll("[data-nav]").forEach(el => {
 /* 召唤按钮 */
 document.getElementById("btn-gacha-1").addEventListener("click", () => doGacha(1));
 document.getElementById("btn-gacha-10").addEventListener("click", () => doGacha(10));
+
+/* 图鉴筛选只更新展示，保留输入焦点，不发起账号操作。 */
+document.getElementById("roster-filters").addEventListener("submit", event => event.preventDefault());
+document.getElementById("roster-search").addEventListener("input", event => updateRosterFilter("query", event.target.value));
+document.querySelectorAll("#roster-filters select").forEach(select => {
+  select.addEventListener("change", () => updateRosterFilter(select.id.replace("roster-", ""), select.value));
+});
+document.getElementById("roster-reset").addEventListener("click", () => {
+  resetRosterFilters();
+  document.getElementById("roster-search").focus();
+});
 
 /* 点遮罩关弹窗 */
 document.getElementById("modal-mask").addEventListener("click", e => {

@@ -1,5 +1,15 @@
 # Game-Only Export Validation
 
+## Character Roster And Squad Experience (2026-11-26)
+
+- Added name/element/role search, combined roster filters, explicit level/star/rarity sorting, result counts and empty-filter recovery. Character cards now have separate native detail and squad buttons, visible role/element information, 44-pixel squad controls and readable locked-character labels.
+- Squad changes expose saving, confirmed and failed states without optimistic ownership or lineup changes. Full squads cannot submit a fifth member. Empty slots find owned reserves. Filtering preserves input focus; squad updates preserve filters and relevant focus. Sign-out clears session-only roster preferences.
+- Windows, Node.js 26.13.1: 93 existing interface assertions and 77 Node tests/subtests passed. Ten added tests cover filtering/sorting, inert search text, focus, semantic controls, pending/concurrent/rejected/uncertain squad changes, same-session preferences, account cleanup, contrast and touch target sizes.
+- Python 3.12.14: 19 preview/release tests passed. Release scan: 148 game files, four reviewed synthetic fixture matches, zero private deployment markers supplied. Updated the reviewed test-file hash after checking its changes; credentials remain synthetic.
+- Real Chrome with local API fixtures checked desktop (1440×1000), tablet (1024×900), phone (375×812 and 320×740), landscape (812×375) and compact layout (640×450). Search, select filters, empty recovery, keyboard detail activation/focus restoration, server-confirmed squad intents, reduced motion, control dimensions and horizontal fit passed with artwork loaded and screenshots inspected. No browser runtime errors occurred. Fixtures remain ignored development tools.
+- All checks ran serially under affinity `0F` on eight logical CPUs, with one Node V8 pool worker. The static design detector still reports existing game-wide typography, contrast and decoration findings; scoped roster contrast tests and rendered checks passed.
+- Reviewed upstream PR #1 (`424ab77`) as a reference for clearer game workflows. This update adds no backend tables, routes, ladder rewards or host dependencies. No Go build or external-host/database validation was performed for these frontend changes.
+
 ## Dialog And Warehouse Regression Validation (2026-11-26)
 
 - Windows, Node.js 26.13.1: all 93 existing browser-interface assertions and 67 Node tests/subtests passed. The 11 added tests/subtests cover dialog naming, keyboard focus containment/restoration, settlement dismissal protection, logout cleanup, stale warehouse success/failure responses, concurrent reads, escaped warehouse fields and safe activation bindings.

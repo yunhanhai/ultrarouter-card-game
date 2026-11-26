@@ -11,7 +11,7 @@
       "reason": "Reviewed synthetic test account, mock response or test URL; no production values or production connections."
     },
     "tests/server-authority-check.js": {
-      "sha256": "91dc479637d6d3ef3cf8a5dde2efecf7efe6d400da06ede86eee1bc8139b5964",
+      "sha256": "27f0e46f73d3fac66be4dcefb0e8afc6d33e52102d8a50f849f644e578a69736",
       "categories": [
         "quoted_secret"
       ],

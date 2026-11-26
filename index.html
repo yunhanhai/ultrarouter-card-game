@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>星霜少女</title>
-<link rel="stylesheet" href="style.css?v=20261126-dialog1">
+<link rel="stylesheet" href="style.css?v=20261126-roster1">
 <link rel="stylesheet" href="mobile.css?v=20261117-mobile5" media="(max-width: 700px), (max-width: 1000px) and (max-height: 500px) and (orientation: landscape)">
 </head>
 <body>
@@ -127,18 +127,34 @@
 
     <!-- 编队页 -->
     <section class="page" id="page-squad">
-      <h2>编队</h2>
+      <h2>编队与图鉴</h2>
       <div class="team-panel">
         <div class="team-head">
           <span class="t">出战队伍 <b id="team-count">0/4</b></span>
           <span class="p" id="team-power"></span>
         </div>
-        <div class="team-slots" id="squad-slots"></div>
+        <div class="team-slots" id="squad-slots" aria-label="当前出战队伍" aria-busy="false"></div>
+        <p id="squad-status" class="squad-status" role="status" aria-live="polite"></p>
         <div class="team-stats" id="team-stats"></div>
-        <div class="team-tip">点击位次移出队伍 · 下方列表点角标快速上下阵 · 焰＞木＞水＞焰，星＞暗＞时＞星；克制伤害+20%，被克伤害−20%</div>
+        <div class="team-tip">点击队伍卡片移出，空位可查找候补。图鉴卡片查看详情，角标加入或移出队伍。焰＞木＞水＞焰，星＞暗＞时＞星；克制伤害+20%，被克伤害−20%。</div>
       </div>
-      <div class="sub-title" id="owned-title">已拥有</div>
-      <div id="owned-list"></div>
+      <section class="roster-library" aria-labelledby="owned-title">
+        <div class="roster-heading"><h3 id="owned-title">角色图鉴</h3><span id="roster-result-count" role="status" aria-live="polite" aria-atomic="true"></span></div>
+        <form id="roster-filters" class="roster-tools" role="search" aria-label="角色图鉴筛选">
+          <div class="roster-search-row">
+            <label class="roster-search" for="roster-search"><span>搜索角色</span><input id="roster-search" type="search" maxlength="80" placeholder="名称、元素或定位" autocomplete="off"></label>
+            <button type="button" class="roster-reset" id="roster-reset">重置筛选</button>
+          </div>
+          <div class="roster-selects">
+            <label for="roster-status">拥有状态<select id="roster-status"><option value="all">全部角色</option><option value="owned">已拥有</option><option value="squad">出战中</option><option value="reserve">可上阵</option><option value="locked">未获得</option></select></label>
+            <label for="roster-rarity">稀有度<select id="roster-rarity"><option value="all">全部稀有度</option><option value="SSR">SSR</option><option value="SR">SR</option><option value="R">R</option></select></label>
+            <label for="roster-elem">元素<select id="roster-elem"><option value="all">全部元素</option><option value="fire">焰系</option><option value="water">水系</option><option value="plant">木系</option><option value="star">星系</option><option value="dark">暗系</option><option value="time">时系</option></select></label>
+            <label for="roster-role">定位<select id="roster-role"><option value="all">全部定位</option><option value="tank">守护</option><option value="sdps">单攻</option><option value="adps">群攻</option><option value="heal">治疗</option><option value="support">辅助</option></select></label>
+            <label for="roster-sort">排序<select id="roster-sort"><option value="default">出战优先</option><option value="level">等级从高到低</option><option value="star">星级从高到低</option><option value="rarity">稀有度优先</option></select></label>
+          </div>
+        </form>
+        <div id="owned-list" role="list" aria-label="角色列表"></div>
+      </section>
     </section>
 
     <!-- 副本页：章节 -> 关卡节点 -> 关卡详情 -->
@@ -234,9 +250,9 @@
 <script src="js/config.js?v=20261120-lobby1"></script>
 <script src="js/store.js?v=20261123-progression1"></script>
 <script src="js/data.js?v=20261123-progression1"></script>
-<script src="js/ui.js?v=20261126-dialog1"></script>
+<script src="js/ui.js?v=20261126-roster1"></script>
 <script src="js/progression.js?v=20261123-progression2"></script>
 <script src="js/battle.js?v=20261123-progression1"></script>
-<script src="js/main.js?v=20261126-dialog1"></script>
+<script src="js/main.js?v=20261126-roster1"></script>
 </body>
 </html>

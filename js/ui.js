@@ -113,6 +113,7 @@ async function retryGameAction() {
   const result = await Store.retryPendingAction();
   if (!result) return;
   closeModal();
+  document.getElementById("squad-status").textContent = "";
   if (battleRunning) renderTopbar();
   else nav(document.body.dataset.page || "page-home");
   if (result.room) { pickArenaTab("rooms"); }
@@ -405,29 +406,152 @@ function squadBondLabels(ids) {
   if (selected.length === 4 && new Set(selected.map(g => g.elem)).size === 4) labels.push("四象协奏 · 防御 +5%");
   return labels.length ? labels : ["编队两名同元素少女触发元素共鸣；三名同定位触发职能协奏"];
 }
+
+const ROSTER_ROLES = { tank: "守护", sdps: "单攻", adps: "群攻", heal: "治疗", support: "辅助" };
+let rosterView = { query: "", status: "all", rarity: "all", elem: "all", role: "all", sort: "default" };
+let rosterEpoch = -1;
+let squadSaving = false;
+
+function resetRosterFilters() {
+  rosterView = { query: "", status: "all", rarity: "all", elem: "all", role: "all", sort: "default" };
+  for (const [key, value] of Object.entries(rosterView)) {
+    document.getElementById(key === "query" ? "roster-search" : "roster-" + key).value = value;
+  }
+  if (Store.ready()) renderRoster(true);
+}
+
+function clearRoster() {
+  rosterEpoch = -1;
+  resetRosterFilters();
+  document.getElementById("owned-list").replaceChildren();
+  document.getElementById("squad-slots").replaceChildren();
+  document.getElementById("squad-slots").setAttribute("aria-busy", "false");
+  document.getElementById("squad-status").textContent = "";
+  document.getElementById("owned-title").textContent = "角色图鉴";
+  document.getElementById("roster-result-count").textContent = "";
+}
+
+function updateRosterFilter(key, value) {
+  if (!requireGame()) return;
+  if (key === "query") {
+    rosterView.query = String(value).slice(0, 80);
+    document.getElementById("roster-search").value = rosterView.query;
+  } else {
+    const control = document.getElementById("roster-" + key);
+    if (!control || ![...control.options].some(option => option.value === value)) return;
+    rosterView[key] = value;
+    control.value = value;
+  }
+  renderRoster(true);
+}
+
+function focusRosterReserve() {
+  if (!requireGame()) return;
+  resetRosterFilters();
+  updateRosterFilter("status", "reserve");
+  document.getElementById("roster-search").focus();
+}
+
+function renderRoster(resetScroll = false) {
+  const list = document.getElementById("owned-list");
+  const focused = list.contains(document.activeElement) ? document.activeElement : null;
+  const focusedId = focused?.closest("[data-id]")?.dataset.id;
+  const focusedAction = focused?.classList.contains("quick-toggle") ? ".quick-toggle" : ".roster-detail";
+  const previousScroll = resetScroll ? 0 : list.scrollTop;
+  const order = { SSR: 0, SR: 1, R: 2 };
+  const owned = g => (SAVE.girls[g.id]?.star || 0) > 0;
+  const terms = rosterView.query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const girls = GIRLS.filter(g => {
+    const inSquad = SAVE.squad.includes(g.id);
+    if (rosterView.status === "owned" && !owned(g) || rosterView.status === "locked" && owned(g) ||
+        rosterView.status === "squad" && !inSquad || rosterView.status === "reserve" && (!owned(g) || inSquad)) return false;
+    if (rosterView.rarity !== "all" && g.rarity !== rosterView.rarity ||
+        rosterView.elem !== "all" && g.elem !== rosterView.elem ||
+        rosterView.role !== "all" && g.role !== rosterView.role) return false;
+    const text = `${g.name} ${g.rarity} ${ELEM[g.elem].name}系 ${ROSTER_ROLES[g.role]}`.toLocaleLowerCase();
+    return terms.every(term => text.includes(term));
+  }).sort((a, b) => {
+    const ownA = SAVE.girls[a.id], ownB = SAVE.girls[b.id];
+    if (rosterView.sort === "default") {
+      const slotA = SAVE.squad.indexOf(a.id), slotB = SAVE.squad.indexOf(b.id);
+      if ((slotA >= 0) !== (slotB >= 0)) return slotA >= 0 ? -1 : 1;
+      if (slotA >= 0 && slotB >= 0) return slotA - slotB;
+    }
+    if (rosterView.sort === "rarity" && a.rarity !== b.rarity) return order[a.rarity] - order[b.rarity];
+    if (owned(a) !== owned(b)) return owned(a) ? -1 : 1;
+    if (rosterView.sort === "level" || rosterView.sort === "star") {
+      const difference = (owned(b) ? ownB[rosterView.sort] : 0) - (owned(a) ? ownA[rosterView.sort] : 0);
+      if (difference) return difference;
+    }
+    return order[a.rarity] - order[b.rarity] || (ownB?.level || 0) - (ownA?.level || 0) || a.id.localeCompare(b.id);
+  });
+  document.getElementById("owned-title").textContent = `图鉴 ${GIRLS.filter(owned).length}/${GIRLS.length} · 在队 ${SAVE.squad.length} 位`;
+  document.getElementById("roster-result-count").textContent = `显示 ${girls.length} / ${GIRLS.length} 位`;
+  document.getElementById("roster-reset").disabled = !rosterView.query &&
+    ["status", "rarity", "elem", "role"].every(key => rosterView[key] === "all") && rosterView.sort === "default";
+  list.innerHTML = girls.map(g => {
+    const own = SAVE.girls[g.id], unlocked = owned(g);
+    const slot = SAVE.squad.indexOf(g.id), inSquad = slot >= 0;
+    const blocked = squadSaving || Store.mutationBusy || !inSquad && SAVE.squad.length >= 4;
+    const action = inSquad ? "移出队伍" : "加入队伍";
+    return `<article class="card r-${g.rarity} ${unlocked ? inSquad ? "in-team" : "" : "card-locked"}" data-id="${g.id}" role="listitem">
+      <button type="button" class="roster-detail" aria-label="查看${esc(g.name)}详情" aria-haspopup="dialog">
+        <img src="${g.img}" loading="lazy" alt="">
+        <span class="roster-traits">${g.rarity} · ${ELEM[g.elem].name} · ${ROSTER_ROLES[g.role]}</span>
+        ${inSquad ? `<span class="team-flag">出战 ${slot + 1}</span>` : ""}
+        ${own?.shards > 0 ? `<span class="shard-n">碎片 ${own.shards}</span>` : ""}
+        <span class="name">${esc(g.name)}<i>${unlocked ? `Lv${own.level} · ${own.star}星${own.talent ? ` · ${TALENTS[own.talent]?.name || "天赋"}` : ""}` : "未获得"}</i></span>
+      </button>
+      ${unlocked ? `<button type="button" class="quick-toggle" data-squad-toggle ${blocked ? "disabled" : ""} aria-label="将${esc(g.name)}${action}${!inSquad && SAVE.squad.length >= 4 ? "，队伍已满，请先移出一名" : ""}" title="${!inSquad && SAVE.squad.length >= 4 ? "队伍已满，请先移出一名" : action}">${inSquad ? "−" : "+"}</button>` : ""}
+    </article>`;
+  }).join("") || `<div class="roster-empty" role="listitem"><h4>没有找到符合条件的角色</h4><p>试试更短的名字，或清除筛选查看完整图鉴。</p><button type="button" class="roster-reset">清除筛选，显示全部角色</button></div>`;
+  list.querySelectorAll("[data-id]").forEach(card => {
+    card.querySelector(".roster-detail").addEventListener("click", () => openGirl(card.dataset.id));
+    card.querySelector(".quick-toggle")?.addEventListener("click", () => toggleSquad(card.dataset.id));
+  });
+  list.querySelector(".roster-empty button")?.addEventListener("click", () => {
+    resetRosterFilters();
+    document.getElementById("roster-search").focus();
+  });
+  if (focusedId) {
+    const target = list.querySelector(`[data-id="${focusedId}"] ${focusedAction}`);
+    (target && !target.disabled ? target : document.getElementById("roster-search")).focus({ preventScroll: true });
+  } else if (focused && !focused.isConnected) {
+    document.getElementById("roster-search").focus({ preventScroll: true });
+  }
+  list.scrollTop = previousScroll;
+}
+
 function renderSquad() {
   if (!requireGame()) return;
+  if (rosterEpoch !== Store.sessionEpoch) {
+    rosterEpoch = Store.sessionEpoch;
+    resetRosterFilters();
+  }
   const slots = document.getElementById("squad-slots");
   let power = 0;
   const agg = { hp: 0, atk: 0, def: 0, spd: 0 };
   slots.innerHTML = [0, 1, 2, 3].map(i => {
     const id = SAVE.squad[i];
-    if (!id) return `<div class="team-slot empty" onclick="toast('从下方列表点角标补位')">
+    if (!id) return `<button type="button" class="team-slot empty" aria-label="空位 ${i + 1}，查找可上阵角色">
         <img class="slot-add" src="assets/ui/slot-add.webp" alt="">
-        <span class="slot-lb">空位 ${i + 1}</span></div>`;
+        <span class="slot-lb">空位 ${i + 1}</span></button>`;
     const g = GIRLS.find(x => x.id === id);
     const own = SAVE.girls[id];
     power += powerOf(id);
     const s = finalStats(id, true);
     agg.hp += s.hp; agg.atk += s.atk; agg.def += s.def; agg.spd += s.spd;
-    return `<div class="team-slot filled r-${g.rarity}" onclick="unslot(${i})" title="点击移出队伍">
+    return `<button type="button" class="team-slot filled r-${g.rarity}" data-squad-toggle title="点击移出队伍" aria-label="出战位 ${i + 1}：${esc(g.name)}，点击移出队伍" ${squadSaving || Store.mutationBusy ? "disabled" : ""}>
       <span class="ts-idx">${i + 1}</span>
       <span class="ts-x">×</span>
       <img src="${g.img}" loading="lazy" alt="">
-      <div class="tn-name">${g.name}</div>
-      <div class="tn-sub">Lv${own.level} · ${own.star}星</div>
-    </div>`;
+      <span class="tn-name">${g.name}</span>
+      <span class="tn-sub">Lv${own.level} · ${own.star}星</span>
+    </button>`;
   }).join("");
+  slots.querySelectorAll(".team-slot").forEach((button, i) => {
+    button.addEventListener("click", () => SAVE.squad[i] ? unslot(i) : focusRosterReserve());
+  });
   document.getElementById("team-count").textContent = SAVE.squad.length + "/4";
   document.getElementById("team-power").textContent = "队伍战力 " + (Number.isSafeInteger(SAVE.power) ? SAVE.power : power).toLocaleString();
   const n = SAVE.squad.length || 1;
@@ -438,66 +562,61 @@ function renderSquad() {
     <span>均速 <b>${Math.round(agg.spd / n)}</b></span>
     <div class="bond-line"><b>队伍羁绊</b>${squadBondLabels(SAVE.squad).map(x => `<span>${esc(x)}</span>`).join("")}</div>`;
 
-  // 列表：图鉴全量展示（未获得置灰），在队优先，其次已拥有、稀有度、等级
-  const order = { SSR: 0, SR: 1, R: 2 };
-  const ids = GIRLS.map(g => g.id).sort((a, b) => {
-    const ia = SAVE.squad.indexOf(a), ib = SAVE.squad.indexOf(b);
-    const ina = ia >= 0, inb = ib >= 0;
-    if (ina !== inb) return ina ? -1 : 1;
-    if (ina && inb) return ia - ib;
-    const oa = SAVE.girls[a]?.star > 0 ? 1 : 0, ob = SAVE.girls[b]?.star > 0 ? 1 : 0;
-    if (oa !== ob) return ob - oa;
-    const ga = GIRLS.find(g => g.id === a), gb = GIRLS.find(g => g.id === b);
-    return order[ga.rarity] - order[gb.rarity]
-      || (SAVE.girls[b] ? SAVE.girls[b].level : 0) - (SAVE.girls[a] ? SAVE.girls[a].level : 0);
-  });
-  document.getElementById("owned-title").textContent =
-    "图鉴 " + Object.values(SAVE.girls).filter(g => g.star > 0).length + "/" + GIRLS.length +
-    " · 在队 " + SAVE.squad.length + " 位";
-  document.getElementById("owned-list").innerHTML = ids.map(id => {
-    const g = GIRLS.find(x => x.id === id);
-    const own = SAVE.girls[id];
-    if (!own || own.star <= 0) return `<div class="card r-${g.rarity} card-locked" data-id="${id}" title="尚未获得">
-      <img src="${g.img}" loading="lazy">
-      <span class="shard-n">${own?.shards > 0 ? "碎片 " + own.shards : ""}</span>
-      <div class="name">${g.name}<i>未获得</i></div>
-    </div>`;
-    const slot = SAVE.squad.indexOf(id);          // -1 = 未上阵
-    const inSquad = slot >= 0;
-    return `<div class="card r-${g.rarity} ${inSquad ? "in-team" : ""}" data-id="${id}">
-      <img src="${g.img}" loading="lazy">
-      ${inSquad ? `<span class="team-flag">出战 ${slot + 1}</span>` : ""}
-      <span class="shard-n">${own.shards > 0 ? "碎片 " + own.shards : ""}</span>
-      <div class="name">${g.name}<i>Lv${own.level} · ${own.star}星${own.talent ? ` · ${TALENTS[own.talent]?.name || "天赋"}` : ""}</i></div>
-      <span class="quick-toggle" title="${inSquad ? "移出队伍" : "加入队伍"}">${inSquad ? "−" : "+"}</span>
-    </div>`;
-  }).join("");
-
-  // 事件委托：点角标快速上下阵，点卡片打开详情
-  document.querySelectorAll("#owned-list .card").forEach(card => {
-    card.addEventListener("click", e => {
-      if (e.target.closest(".quick-toggle")) { toggleSquad(card.dataset.id); return; }
-      openGirl(card.dataset.id);
-    });
-  });
+  renderRoster();
 }
+
+async function saveSquad(squad, message) {
+  if (squadSaving || Store.mutationBusy) return;
+  const epoch = Store.sessionEpoch;
+  const active = document.activeElement;
+  const focusedSlot = active?.closest("#squad-slots .team-slot");
+  const slotIndex = focusedSlot ? [...focusedSlot.parentElement.children].indexOf(focusedSlot) : -1;
+  const focusedId = active?.closest("#owned-list [data-id]")?.dataset.id;
+  squadSaving = true;
+  const status = document.getElementById("squad-status");
+  status.textContent = "正在保存编队，等待服务器确认…";
+  document.getElementById("squad-slots").setAttribute("aria-busy", "true");
+  document.querySelectorAll("[data-squad-toggle]").forEach(button => { button.disabled = true; });
+  try {
+    const result = await Store.mutate("squad", { squad });
+    if (epoch !== Store.sessionEpoch || !Store.ready()) return;
+    squadSaving = false;
+    if (document.body.dataset.page === "page-squad") {
+      const restoreFocus = document.getElementById("modal-mask").classList.contains("hidden") &&
+        (focusedId || slotIndex >= 0) && (document.activeElement === active || document.activeElement === document.body);
+      renderSquad();
+      if (restoreFocus) {
+        const target = slotIndex >= 0 ? document.querySelectorAll("#squad-slots .team-slot")[slotIndex] :
+          document.querySelector(`#owned-list [data-id="${focusedId}"] .quick-toggle`);
+        (target && !target.disabled ? target : document.getElementById("roster-search")).focus({ preventScroll: true });
+      }
+    }
+    renderTopbar();
+    status.textContent = result ? message : Store.pendingAction ? "编队尚未确认，请在弹窗中重试原操作。" : "编队保存失败，当前阵容未改变，请稍后重试。";
+  } finally {
+    squadSaving = false;
+    if (epoch === Store.sessionEpoch) document.getElementById("squad-slots").setAttribute("aria-busy", "false");
+  }
+}
+
 async function toggleSquad(id) {
   if (!requireGame()) return;
-  if (!SAVE.girls[id] || SAVE.girls[id].star <= 0) return toast("该少女尚未解锁");
+  const girl = GIRLS.find(g => g.id === id);
+  if (!girl || !SAVE.girls[id] || SAVE.girls[id].star <= 0) return toast("该少女尚未解锁");
   let squad;
   if (SAVE.squad.includes(id)) squad = SAVE.squad.filter(x => x !== id);
   else {
     if (SAVE.squad.length >= 4) return toast("最多上阵 4 人，先移出一名");
     squad = [...SAVE.squad, id];
   }
-  if (!await Store.mutate("squad", { squad })) return;
-  renderSquad(); renderTopbar();
+  await saveSquad(squad, `已将${girl.name}${squad.includes(id) ? "加入" : "移出"}队伍。`);
 }
 async function unslot(i) {
   if (!requireGame()) return;
+  if (!Number.isInteger(i) || i < 0 || i >= SAVE.squad.length) return;
   const squad = SAVE.squad.filter((_, index) => index !== i);
-  if (!await Store.mutate("squad", { squad })) return;
-  renderSquad(); renderTopbar();
+  const girl = GIRLS.find(g => g.id === SAVE.squad[i]);
+  await saveSquad(squad, `已将${girl.name}移出队伍。`);
 }
 
 function shardReserve(g, own) {

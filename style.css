@@ -1098,23 +1098,21 @@ body {
   /* 编队页两栏：左出战队伍，右拥有列表 */
   #page-squad.active {
     display: grid; column-gap: 26px;
-    grid-template-columns: 490px minmax(0, 1fr);
-    grid-template-areas: "h2 h2" "team own-title" "team own-list";
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-columns: minmax(290px, 360px) minmax(0, 1fr);
+    grid-template-areas: "h2 h2" "team library";
+    grid-template-rows: auto minmax(0, 1fr);
     align-content: start; height: 100%; overflow: hidden;
     padding: 0 20px 92px 0;
   }
   #page-squad h2 { grid-area: h2; }
-  #page-squad .team-panel { grid-area: team; margin: 0 0 0 20px; align-self: start; }
-  #page-squad #owned-title { grid-area: own-title; margin-top: 22px; }
+  #page-squad .team-panel { grid-area: team; margin: 0 0 0 20px; align-self: start; max-height: 100%; overflow-y: auto; }
+  #page-squad .roster-library { grid-area: library; margin: 0; display: flex; flex-direction: column; min-height: 0; }
   #page-squad #owned-list {
-    grid-area: own-list; padding: 0 0 14px;
+    flex: 1; padding: 6px 4px 24px;
     display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     gap: 16px; align-content: start;
     overflow-y: auto; min-height: 0;
-    /* 底部渐隐：列表可继续下滚时明确提示，避免卡片被硬切一半看着像坏掉 */
-    mask-image: linear-gradient(180deg, #000 calc(100% - 34px), transparent 100%);
-    -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 34px), transparent 100%);
+    scrollbar-width: thin; scrollbar-color: var(--ink-2) transparent;
   }
   #page-squad .page-cta { display: none; }
   .home-actions { flex-direction: row; width: 100%; max-width: 880px; margin: 0 auto; }
@@ -1686,6 +1684,58 @@ body::before {
 .gx-empty { color: var(--ink-3); }
 
 /* ---------- 编队：出战小卡与图鉴卡的名条统一成米色 ---------- */
+.roster-library { min-width: 0; margin: 20px; }
+.roster-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; margin: 0 0 14px; }
+.roster-heading h3 { margin: 0; font-size: 18px; color: var(--navy); letter-spacing: 0; }
+.roster-heading > span { color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.roster-tools { flex: 0 0 auto; padding: 0 0 16px; margin-bottom: 10px; border-bottom: 1px solid var(--hair); }
+.roster-search-row { display: flex; align-items: end; gap: 12px; margin-bottom: 12px; }
+.roster-tools label { display: grid; min-width: 0; gap: 6px; color: var(--ink-2); font-size: 13px; font-weight: 600; }
+.roster-search { flex: 1; }
+.roster-tools input, .roster-tools select { width: 100%; min-width: 0; min-height: 44px; border: 1px solid #a78d70; border-radius: 8px; padding: 9px 10px; background: var(--paper-2); color: var(--navy-2); font: inherit; font-size: 16px; caret-color: var(--navy-2); }
+.roster-tools input::placeholder { color: var(--ink-2); opacity: 1; }
+.roster-tools select { cursor: pointer; padding-right: 6px; }
+.roster-selects { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(140px, 1.3fr); gap: 10px; }
+.roster-reset { min-height: 44px; padding: 10px 14px; flex: 0 0 auto; border: 1px solid #a78d70; border-radius: 8px; background: var(--paper-2); color: var(--navy-2); font: inherit; font-size: 14px; cursor: pointer; }
+.roster-reset:hover { background: var(--paper-3); }
+.roster-reset:disabled { color: var(--ink-2); background: transparent; border-color: var(--hair); cursor: default; }
+.roster-library #owned-list { padding: 6px 4px 24px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px; }
+.roster-library #owned-list::-webkit-scrollbar { width: 6px; }
+.roster-library #owned-list::-webkit-scrollbar-thumb { background: var(--ink-2); border-radius: 6px; }
+.roster-empty { grid-column: 1 / -1; padding: 32px 12px; color: var(--ink-2); text-align: center; }
+.roster-empty h4 { color: var(--navy); margin: 0 0 10px; font-size: 18px; }
+.roster-empty p { line-height: 1.7; margin-bottom: 18px; }
+.squad-status { min-height: 22px; margin: 12px 0 0; color: var(--navy-2); font-size: 13px; line-height: 1.6; }
+.squad-status:empty { min-height: 0; margin: 0; }
+#page-squad .team-panel { clip-path: none; }
+#page-squad .team-slot { font: inherit; padding: 0; color: var(--ink); }
+#page-squad .team-head .p, #page-squad .team-tip, #page-squad .slot-lb { color: var(--ink-2); }
+.roster-detail { display: block; position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--ink); font: inherit; cursor: pointer; }
+#owned-list .name { color: #fff8ec; }
+#owned-list .card-locked .name { color: #fff8ec; background: linear-gradient(transparent, rgba(52,34,20,.94) 52%); }
+#owned-list .card-locked .name i { color: #fff0dc; }
+#owned-list .roster-traits { position: absolute; z-index: 4; left: var(--fl); right: var(--fr); bottom: calc(var(--fb) + 43px); color: #fff8ec; background: rgba(43,53,80,.94); padding: 4px 2px; font-size: 12px; line-height: 1.4; text-align: center; white-space: nowrap; }
+#owned-list .card .quick-toggle { width: 44px; height: 44px; padding: 0; top: calc(var(--ft) + 27px); left: calc(var(--fl) + 3px); line-height: 40px; font-size: 24px; cursor: pointer; }
+#owned-list .card .quick-toggle:disabled { opacity: .65; cursor: default; }
+#owned-list .card .quick-toggle:hover:not(:disabled) { background: var(--paper-3); }
+#page-squad :is(button, input, select):focus-visible { outline: 3px solid var(--navy-2); outline-offset: 2px; }
+#owned-list .roster-detail:focus-visible { outline-offset: -3px; }
+.roster-library .card:focus-within { outline: 3px solid var(--navy-2); outline-offset: 2px; }
+#page-squad .team-slot:disabled { cursor: wait; }
+@media (min-width: 960px) and (max-width: 1199px) {
+  .roster-selects { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 700px) {
+  .roster-library { margin: 20px 12px 0; padding-bottom: 16px; }
+  .roster-heading h3 { font-size: 16px; }
+  .roster-selects { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .roster-selects label:last-child { grid-column: 1 / -1; }
+  .roster-library #owned-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #owned-list .card, #owned-list .card::before { animation: none; transition: none; }
+  #owned-list .card:hover { transform: none; }
+}
 .team-slot { border-radius: 10px; }
 .team-slot.filled::before { box-shadow: none; filter: drop-shadow(0 2px 5px rgba(90,64,40,.3)); }
 .team-slot .ts-close {

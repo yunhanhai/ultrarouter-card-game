@@ -4,6 +4,8 @@ This repository contains **only the card game**, not the maintainer's website or
 
 Included: the browser game, 28 character definitions, game artwork, server-owned game rules, dungeon battles, progression, inventory, token shop, rankings, voluntary PvP matchmaking, custom rooms, and game regression tests.
 
+The character roster supports text search, combined ownership/rarity/element/role filters and level/star sorting. Separate keyboard-accessible buttons open character details or change the squad; empty slots find available reserves. Squad edits wait for server confirmation and retain the original request ID when an uncertain result needs a retry. Filters remain in memory for the current session and clear on sign-out.
+
 Not included: the website dashboard, account-management implementation, API-provider relay, QQ bot/binding system, payment platform, production deployment scripts, server addresses, credentials, real accounts, or database files.
 
 ## What Can Run Locally

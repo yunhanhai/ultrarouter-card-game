@@ -116,6 +116,7 @@ function harness(t, { signedIn = true, responder, url = "https://example.test/ga
     window.__authority = { Store, SITE, nav, doGacha, levelUp, starUp, toggleSquad, unslot, toggleMulti,
       openGirl, pickChapter, pickStage, openWarehouse, startBattle, resumeBattle, exitBattle, recoverBattle,
       showModal, closeModal, activateCard, retryGameAction, onSiteSessionEvent, battleEnd, syncSiteAccount,
+      renderSquad, updateRosterFilter, resetRosterFilters, focusRosterReserve,
       get save(){return SAVE;}, setSave(s){SAVE=s;}, get battle(){return BAT;},
       get running(){return battleRunning;},
       setSleep(fn){sleep=fn;}, setStrike(fn){playStrike=fn;},
@@ -268,6 +269,179 @@ test("activation refreshes account data without reopening a closed warehouse", a
   assert.equal(h.count(ep.profile), 2, "The account still refreshes after activation");
   assert.equal(h.count(ep.warehouse), 1, "A dismissed warehouse is not requested again");
   assert.ok(h.d.getElementById("modal-mask").classList.contains("hidden"));
+});
+
+test("roster search and combined filters use display data without game requests or storage", async t => {
+  const h = harness(t); await until(() => h.game.Store.ready());
+  h.game.nav("page-squad");
+  const requests = h.calls.length;
+  const ids = () => [...h.d.querySelectorAll("#owned-list .card")].map(card => card.dataset.id);
+  assert.equal(ids().length, 28);
+  h.game.updateRosterFilter("query", "  小椛   r  ");
+  assert.deepEqual(ids(), ["c08"]);
+  h.game.updateRosterFilter("elem", "water");
+  assert.deepEqual(ids(), []);
+  assert.ok(h.d.querySelector(".roster-empty button"), "Empty filters provide a way back to the complete roster");
+  h.game.resetRosterFilters();
+  h.game.updateRosterFilter("status", "owned");
+  assert.equal(ids().length, 4);
+  h.game.updateRosterFilter("role", "tank");
+  assert.deepEqual(ids(), ["c08"]);
+  h.game.resetRosterFilters();
+  h.game.updateRosterFilter("query", "治疗");
+  assert.ok(ids().length > 0);
+  h.game.updateRosterFilter("status", "locked");
+  assert.ok([...h.d.querySelectorAll("#owned-list .card")].every(card => card.classList.contains("card-locked")));
+  assert.equal(h.calls.length, requests);
+  assertPrivateStorage(h);
+});
+
+test("roster sorting respects explicit levels and stars while default keeps the squad first", async t => {
+  const h = harness(t); await until(() => h.game.Store.ready());
+  h.database.state.girls.c04 = { star: 3, level: 60, exp: 0, shards: 0 };
+  h.database.state.girls.c06.star = 4;
+  h.database.revision++;
+  await h.game.Store.refresh();
+  h.game.nav("page-squad");
+  const first = () => h.d.querySelector("#owned-list .card").dataset.id;
+  assert.equal(first(), "c08");
+  h.game.updateRosterFilter("sort", "level");
+  assert.equal(first(), "c04");
+  h.game.updateRosterFilter("sort", "star");
+  assert.equal(first(), "c06");
+  h.game.updateRosterFilter("sort", "rarity");
+  const sorted = [...h.d.querySelectorAll("#owned-list .card")].map(card => card.dataset.id);
+  assert.ok(sorted.indexOf("c28") < sorted.indexOf("c08"), "Explicit rarity sorting includes unowned SSR characters before R characters");
+  h.game.updateRosterFilter("rarity", "SSR");
+  assert.equal(first(), "c04");
+});
+
+test("roster search keeps text input focus and treats markup as plain text", async t => {
+  const h = harness(t); await until(() => h.game.Store.ready());
+  h.game.nav("page-squad");
+  const input = h.d.getElementById("roster-search");
+  input.focus();
+  input.value = "<img src=x onerror=bad()>";
+  input.dispatchEvent(new h.w.Event("input", { bubbles: true }));
+  assert.equal(h.d.getElementById("roster-search"), input, "Typing must not rebuild the form");
+  assert.equal(h.d.activeElement, input);
+  assert.equal(h.d.querySelector(".roster-empty img"), null);
+  assert.equal(h.d.querySelectorAll("#owned-list .card").length, 0);
+  h.d.querySelector(".roster-empty button").click();
+  assert.equal(input.value, "");
+  assert.equal(h.d.querySelectorAll("#owned-list .card").length, 28);
+});
+
+test("roster cards and slots expose separate keyboard buttons and explain a full squad", async t => {
+  const h = harness(t); await until(() => h.game.Store.ready());
+  h.database.state.girls.c04 = { star: 3, level: 1, exp: 0, shards: 0 };
+  h.database.revision++;
+  await h.game.Store.refresh();
+  h.game.nav("page-squad");
+  assert.equal(h.d.querySelectorAll("#squad-slots button").length, 4);
+  assert.equal(h.d.querySelectorAll("#owned-list .roster-detail").length, 28);
+  assert.equal(h.d.querySelector("#owned-list button button"), null);
+  const reserve = h.d.querySelector('[data-id="c04"] .quick-toggle');
+  assert.equal(reserve.disabled, true);
+  assert.match(reserve.getAttribute("aria-label"), /队伍已满/);
+  assert.equal(h.d.querySelector('[data-id="c14"] .quick-toggle'), null);
+  h.d.querySelector('[data-id="c08"] .roster-detail').focus();
+  h.d.activeElement.click();
+  assert.ok(h.d.getElementById("modal-box").textContent.includes("小椛"));
+  h.game.closeModal();
+  assert.equal(h.d.activeElement.getAttribute("aria-label"), "查看小椛详情");
+});
+
+test("squad changes show pending feedback, keep filters and wait for the server", async t => {
+  const pending = deferred();
+  const h = harness(t); await until(() => h.game.Store.ready());
+  h.game.nav("page-squad");
+  h.game.updateRosterFilter("query", "小椛");
+  h.respond((call, next) => call.path === ep.action ? pending.promise : next(call));
+  const saving = h.game.toggleSquad("c08");
+  await until(() => h.count(ep.action) === 1);
+  assert.equal(h.game.save.squad.length, 4);
+  assert.equal(h.d.querySelector('[data-id="c08"] .quick-toggle').disabled, true);
+  assert.equal(h.d.getElementById("squad-slots").getAttribute("aria-busy"), "true");
+  assert.match(h.d.getElementById("squad-status").textContent, /保存/);
+  await h.game.unslot(1);
+  assert.equal(h.count(ep.action), 1);
+  const call = h.calls.find(call => call.path === ep.action);
+  assertIntentOnly(call, ["action", "squad", "request_id"]);
+  pending.resolve(h.defaultRespond(call));
+  await saving;
+  assert.equal(h.game.save.squad.length, 3);
+  assert.equal(h.d.querySelector('[data-id="c08"] .quick-toggle').disabled, false);
+  assert.equal(h.d.getElementById("roster-search").value, "小椛");
+  assert.equal(h.d.querySelectorAll("#owned-list .card").length, 1);
+  assert.match(h.d.getElementById("squad-status").textContent, /已.*移出/);
+});
+
+test("a filtered-out squad card returns focus to search and a rejected save keeps the squad", async t => {
+  const h = harness(t); await until(() => h.game.Store.ready());
+  h.game.nav("page-squad");
+  h.game.updateRosterFilter("status", "squad");
+  h.d.querySelector('[data-id="c08"] .quick-toggle').focus();
+  await h.game.toggleSquad("c08");
+  assert.equal(h.d.querySelector('[data-id="c08"]'), null);
+  assert.equal(h.d.activeElement, h.d.getElementById("roster-search"));
+  h.respond((call, next) => call.path === ep.action ? fail(409, "GACHA_RESOURCES_REQUIRED") : next(call));
+  await h.game.unslot(0);
+  assert.equal(h.game.save.squad.length, 3);
+  assert.equal(h.d.querySelectorAll("#squad-slots .filled").length, 3);
+  assert.equal(h.game.Store.pendingAction, null);
+  assert.equal(h.d.querySelector('[data-id="c06"] .quick-toggle').disabled, false);
+  assert.match(h.d.getElementById("squad-status").textContent, /保存失败/);
+});
+
+test("uncertain squad replies retain the original intent without changing the visible squad", async t => {
+  const h = harness(t); await until(() => h.game.Store.ready());
+  h.game.nav("page-squad");
+  let attempts = 0;
+  h.respond((call, next) => call.path === ep.action && ++attempts === 1 ? fail(503, "UNCONFIRMED") : next(call));
+  await h.game.unslot(0);
+  assert.equal(h.game.save.squad.length, 4);
+  assert.equal(h.d.querySelectorAll("#squad-slots .filled").length, 4);
+  assert.match(h.d.getElementById("squad-status").textContent, /尚未确认/);
+  const requestId = h.calls.find(call => call.path === ep.action).body.request_id;
+  await h.game.retryGameAction();
+  assert.equal(h.game.save.squad.length, 3);
+  assert.equal(h.calls.filter(call => call.path === ep.action).at(-1).body.request_id, requestId);
+  assert.equal(h.d.getElementById("squad-status").textContent, "");
+});
+
+test("an empty squad slot opens the available roster and a full squad sends no fifth member", async t => {
+  const h = harness(t); await until(() => h.game.Store.ready());
+  h.database.state.girls.c04 = { star: 3, level: 1, exp: 0, shards: 0 };
+  h.database.revision++;
+  await h.game.Store.refresh();
+  h.game.nav("page-squad");
+  await h.game.toggleSquad("c04");
+  assert.equal(h.count(ep.action), 0);
+  await h.game.unslot(0);
+  h.d.querySelector("#squad-slots .empty").click();
+  assert.equal(h.d.getElementById("roster-status").value, "reserve");
+  assert.equal(h.d.activeElement, h.d.getElementById("roster-search"));
+  assert.equal(h.d.querySelectorAll("#owned-list .card").length, 2);
+});
+
+test("roster preferences survive same-account navigation and clear on sign-out", async t => {
+  const h = harness(t); await until(() => h.game.Store.ready());
+  h.game.nav("page-squad");
+  h.game.updateRosterFilter("query", "小椛");
+  h.game.updateRosterFilter("status", "owned");
+  h.game.nav("page-home");
+  h.game.nav("page-squad");
+  assert.equal(h.d.getElementById("roster-search").value, "小椛");
+  h.game.Store.clearSession();
+  assert.equal(h.d.getElementById("roster-search").value, "");
+  assert.equal(h.d.querySelectorAll("#owned-list .card").length, 0);
+  h.database.userID = 8;
+  await h.game.syncSiteAccount();
+  h.game.nav("page-squad");
+  assert.equal(h.d.getElementById("roster-status").value, "all");
+  assert.equal(h.d.querySelectorAll("#owned-list .card").length, 28);
+  assertPrivateStorage(h);
 });
 
 test("anonymous boot and deep links cannot render or use any game entry", async t => {
