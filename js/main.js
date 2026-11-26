@@ -13,7 +13,7 @@ function lockGame(message) {
   document.getElementById("title-screen").classList.remove("hidden");
   document.getElementById("auth-status").textContent = message;
   document.getElementById("auth-actions").classList.toggle("hidden", Store.connecting);
-  document.getElementById("modal-mask").classList.add("hidden");
+  closeModal(true);
   document.getElementById("summon-fx").classList.add("hidden");
   if (BAT) BAT.abort = true;
   BAT = null;
@@ -71,6 +71,28 @@ document.getElementById("btn-gacha-10").addEventListener("click", () => doGacha(
 /* 点遮罩关弹窗 */
 document.getElementById("modal-mask").addEventListener("click", e => {
   if (e.target.id === "modal-mask") closeModal();
+});
+
+/* 弹窗内循环键盘焦点；退出仍遵守未确认结算的关闭限制。 */
+document.addEventListener("keydown", e => {
+  if (e.defaultPrevented || document.getElementById("modal-mask").classList.contains("hidden")) return;
+  if (e.key === "Escape") {
+    e.preventDefault();
+    closeModal();
+    return;
+  }
+  if (e.key !== "Tab") return;
+  const box = document.getElementById("modal-box");
+  const controls = [...box.querySelectorAll('a[href], button, input, select, textarea, [tabindex], [contenteditable="true"]')]
+    .filter(el => el.tabIndex >= 0 && !el.matches(':disabled, input[type="hidden"]') &&
+      !el.closest('[hidden], .hidden, [inert]') &&
+      getComputedStyle(el).display !== "none" && getComputedStyle(el).visibility !== "hidden");
+  const first = controls[0] || box, last = controls[controls.length - 1] || box;
+  if (!controls.includes(document.activeElement) ||
+      (e.shiftKey ? document.activeElement === first : document.activeElement === last)) {
+    e.preventDefault();
+    (e.shiftKey ? last : first).focus();
+  }
 });
 
 /* 返回游戏或站点切换账号时，同步账号；不在后台定时轮转登录 Cookie。 */

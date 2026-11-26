@@ -47,8 +47,14 @@ function renderTopbar() {
 /* ---------- 通用弹窗 ---------- */
 /* 标题与右上角关闭按钮都放进素材自带的藏青标题带（弹窗框的上边 62px），
    内容包在 .mb-scroll 里单独滚动，保证再长的掉落列表也不会把框撑破。 */
+let modalRevision = 0;
+let modalOpener = null;
+
 function showModal(html) {
   const box = document.getElementById("modal-box");
+  const mask = document.getElementById("modal-mask");
+  if (mask.classList.contains("hidden")) modalOpener = document.activeElement;
+  modalRevision++;
   const tpl = document.createElement("div");
   tpl.innerHTML = html.trim();
   const title = tpl.querySelector("h3");
@@ -59,7 +65,15 @@ function showModal(html) {
 
   box.innerHTML = "";
   // 标题直接挂在框上（绝对定位到素材的藏青标题带），不随内容滚动
-  if (title) box.appendChild(title);
+  if (title) {
+    title.id = "modal-title";
+    box.appendChild(title);
+    box.setAttribute("aria-labelledby", title.id);
+    box.removeAttribute("aria-label");
+  } else {
+    box.removeAttribute("aria-labelledby");
+    box.setAttribute("aria-label", tpl.querySelector(".gc-name")?.textContent.trim() || "游戏弹窗");
+  }
   const close = document.createElement("button");
   close.className = "mb-close";
   close.type = "button";
@@ -72,14 +86,22 @@ function showModal(html) {
   scroll.className = "mb-scroll";
   while (rest.firstChild) scroll.appendChild(rest.firstChild);
   box.appendChild(scroll);
-  document.getElementById("modal-mask").classList.remove("hidden");
+  mask.classList.remove("hidden");
+  document.querySelectorAll("#topbar, #pages, #navbar").forEach(el => el.setAttribute("inert", ""));
+  close.focus({ preventScroll: true });
+  return modalRevision;
 }
 function closeModal(force) {
   if (force !== true && BAT && !BAT.abort && !BAT.settled && BAT.playbackComplete) {
     toast("结算尚未确认，请重试结算或重新同步");
     return;
   }
+  modalRevision++;
   document.getElementById("modal-mask").classList.add("hidden");
+  document.querySelectorAll("#topbar, #pages, #navbar").forEach(el => el.removeAttribute("inert"));
+  const opener = modalOpener;
+  modalOpener = null;
+  if (opener?.isConnected && !opener.closest(".hidden, [hidden], [inert]")) opener.focus({ preventScroll: true });
 }
 function showPendingAction(message) {
   if (!requireGame()) return;
@@ -179,13 +201,13 @@ function renderSiteAccount() {
 async function openWarehouse() {
   if (!requireGame()) return;
   const epoch = Store.sessionEpoch;
-  showModal(`<h3>站点仓库</h3>
+  const modal = showModal(`<h3>站点仓库</h3>
     <p class="modal-note">正在读取仓库…</p>
     <div class="modal-btns">
       <button class="gbtn gbtn-sm" onclick="closeModal()"><span>关闭</span></button>
     </div>`);
   const w = await Store.warehouse();
-  if (epoch !== Store.sessionEpoch || !Store.ready()) return;
+  if (epoch !== Store.sessionEpoch || !Store.ready() || modal !== modalRevision) return;
   if (!w) {
     showModal(`<h3>站点仓库</h3>
       <p class="modal-note">读取失败${Store.lastError === "AUTH" ? "：站点登录已失效，请登录后重新同步" : "，请先同步站点账号后重试"}</p>
@@ -201,7 +223,7 @@ async function openWarehouse() {
   const activeHTML = active
     ? `<div class="wh-active">
         <div><div class="wh-k">生效中</div>
-          <div class="wh-name">${active.name}<i>-${active.discount}%</i></div>
+          <div class="wh-name">${esc(active.name)}<i>-${esc(active.discount)}%</i></div>
           <div class="wh-sub">到期 ${fmtClock(active.expire_at)}</div></div>
         <div class="wh-left">${fmtRemain(active.expire_at)}</div>
       </div>`
@@ -209,16 +231,16 @@ async function openWarehouse() {
   const cardsHTML = cards.length
     ? `<div class="wh-list">${cards.map(c => `
         <div class="wh-card">
-          <div class="wh-name">${c.name}<i>-${c.discount}%</i></div>
-          <div class="wh-sub">有效 ${c.duration_min} 分钟 · ${fmtClock(c.obtained_at)} 获得</div>
+          <div class="wh-name">${esc(c.name)}<i>-${esc(c.discount)}%</i></div>
+          <div class="wh-sub">有效 ${esc(c.duration_min)} 分钟 · ${fmtClock(c.obtained_at)} 获得</div>
           <button class="gbtn gbtn-sm ${active ? "" : "gbtn-primary"}" ${active ? "disabled" : ""}
-            onclick="activateCard('${c.id}')"><span>${active ? "已有生效" : "激活"}</span></button>
+            data-card-id="${esc(c.id)}"><span>${active ? "已有生效" : "激活"}</span></button>
         </div>`).join("")}</div>`
     : `<div class="wh-none">仓库里还没有卡。深渊回廊掉率约 11%，普通本约 3%。</div>`;
   const usedHTML = used.length
     ? `<div class="wh-history"><div class="wh-k">使用记录</div>
-        ${used.slice(0, 5).map(c => `<div class="wh-hrow"><span>${c.name}</span>
-          <span>-${c.discount}%</span><span>${fmtClock(c.activated_at)}</span>
+        ${used.slice(0, 5).map(c => `<div class="wh-hrow"><span>${esc(c.name)}</span>
+          <span>-${esc(c.discount)}%</span><span>${fmtClock(c.activated_at)}</span>
           <span>${c.status === "active" ? "生效中" : "已结束"}</span></div>`).join("")}</div>`
     : "";
   showModal(`<h3>站点仓库</h3>
@@ -229,11 +251,14 @@ async function openWarehouse() {
       <button class="gbtn gbtn-sm" onclick="window.open('${SITE.warehouseUrl}','_blank','noopener')"><span>站点仓库页</span></button>
       <button class="gbtn gbtn-sm" onclick="closeModal()"><span>关闭</span></button>
     </div>`);
+  document.querySelectorAll("#modal-box [data-card-id]").forEach(button =>
+    button.addEventListener("click", () => activateCard(button.dataset.cardId)));
 }
 
 async function activateCard(cardId) {
   if (!requireGame()) return;
   const epoch = Store.sessionEpoch;
+  const modal = modalRevision;
   const r = await Store.activate(cardId);
   if (epoch !== Store.sessionEpoch || !Store.ready()) return;
   if (!r.ok) return toast("激活失败：" + (r.msg || "稍后再试"));
@@ -241,7 +266,7 @@ async function activateCard(cardId) {
   await Store.refresh();
   if (epoch !== Store.sessionEpoch || !Store.ready()) return;
   renderTopbar(); renderSiteAccount();
-  openWarehouse();
+  if (modal === modalRevision) openWarehouse();
 }
 
 /* 到期时间：月日 时:分；到期剩余：时分秒 */

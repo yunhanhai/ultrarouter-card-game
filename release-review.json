@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "reviewed_on": "2026-11-25",
+  "reviewed_on": "2026-11-26",
   "credential_values_recorded": false,
   "files": {
     "backend/model/gacha_game_test.go": {
@@ -11,7 +11,7 @@
       "reason": "Reviewed synthetic test account, mock response or test URL; no production values or production connections."
     },
     "tests/server-authority-check.js": {
-      "sha256": "66850e424c54c6a349f1172d256a15c4b0840d0c76e5adac6e43a0c707a2f28f",
+      "sha256": "91dc479637d6d3ef3cf8a5dde2efecf7efe6d400da06ede86eee1bc8139b5964",
       "categories": [
         "quoted_secret"
       ],

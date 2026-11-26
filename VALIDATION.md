@@ -1,5 +1,16 @@
 # Game-Only Export Validation
 
+## Dialog And Warehouse Regression Validation (2026-11-26)
+
+- Windows, Node.js 26.13.1: all 93 existing browser-interface assertions and 67 Node tests/subtests passed. The 11 added tests/subtests cover dialog naming, keyboard focus containment/restoration, settlement dismissal protection, logout cleanup, stale warehouse success/failure responses, concurrent reads, escaped warehouse fields and safe activation bindings.
+- Python 3.12.14: all 19 preview/release tests passed. The release source scan passed for 148 files with four previously reviewed synthetic fixture matches; the original maintainer's private marker list was unavailable, so no private deployment markers were checked.
+- Chrome with local API fixtures: checked character dialogs at desktop (1440×900), phone (375×812) and landscape (812×375 and 568×320) sizes, including scrolling to the final controls, focus cycling/restoration, reduced motion and dismissed warehouse requests. No browser runtime errors occurred. These fixtures do not provide playable preview accounts or backend validation.
+- Test processes ran serially with affinity `0F` on an eight-CPU machine. Dependencies, temporary files and screenshots stayed in ignored project-local directories. Original source line endings were preserved so unchanged fixture hashes remain valid.
+- Updated the reviewed test-file hash after inspecting the changes; all existing authentication fixtures remain synthetic.
+- The Impeccable static detector reported existing contrast, text-size and decoration warnings elsewhere in the interface. This focused dialog change does not claim a complete visual/accessibility audit of the game; character-detail contrast regression tests passed.
+
+The initial export validation below is retained as historical context.
+
 Validation date: 2026-11-25. This export contains only the card game; no complete host application or production deployment is included.
 
 ## Checks Actually Run

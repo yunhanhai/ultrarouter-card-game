@@ -115,7 +115,7 @@ function harness(t, { signedIn = true, responder, url = "https://example.test/ga
   w.eval(files.map(file => fs.readFileSync(path.join(root, "js", file), "utf8")).join("\n;\n") + `
     window.__authority = { Store, SITE, nav, doGacha, levelUp, starUp, toggleSquad, unslot, toggleMulti,
       openGirl, pickChapter, pickStage, openWarehouse, startBattle, resumeBattle, exitBattle, recoverBattle,
-      closeModal, retryGameAction, onSiteSessionEvent, battleEnd, syncSiteAccount,
+      showModal, closeModal, activateCard, retryGameAction, onSiteSessionEvent, battleEnd, syncSiteAccount,
       get save(){return SAVE;}, setSave(s){SAVE=s;}, get battle(){return BAT;},
       get running(){return battleRunning;},
       setSleep(fn){sleep=fn;}, setStrike(fn){playStrike=fn;},
@@ -156,6 +156,118 @@ test("game home retains upstream attribution without linking a maintainer server
   assert.equal(link.target, "_blank");
   assert.equal(link.rel, "noopener noreferrer");
   assert.ok(notice.textContent.includes("Frontend design and development by New API contributors."));
+});
+
+test("dialogs have an accessible title, contain keyboard focus and restore their opener", async t => {
+  const h = harness(t); await until(() => h.game.Store.ready());
+  const opener = h.d.querySelector('[data-nav="page-stage"]');
+  opener.focus();
+  h.game.showModal('<h3>测试弹窗</h3><button disabled>不可用</button><button hidden>隐藏</button><input id="dialog-input"><button id="dialog-last">完成</button>');
+  const box = h.d.getElementById("modal-box"), close = box.querySelector(".mb-close");
+  assert.equal(box.getAttribute("role"), "dialog");
+  assert.equal(box.getAttribute("aria-modal"), "true");
+  assert.equal(h.d.getElementById(box.getAttribute("aria-labelledby")).textContent, "测试弹窗");
+  assert.equal(h.d.activeElement, close);
+  for (const id of ["pages", "topbar", "navbar"]) assert.ok(h.d.getElementById(id).hasAttribute("inert"));
+  const key = (value, shiftKey = false) => h.d.activeElement.dispatchEvent(new h.w.KeyboardEvent("keydown", { key: value, shiftKey, bubbles: true, cancelable: true }));
+  key("Tab", true);
+  assert.equal(h.d.activeElement.id, "dialog-last", "Shift+Tab wraps to the last usable control");
+  key("Tab");
+  assert.equal(h.d.activeElement, close, "Tab wraps to the first usable control");
+  key("Escape");
+  assert.ok(h.d.getElementById("modal-mask").classList.contains("hidden"));
+  assert.equal(h.d.activeElement, opener);
+  for (const id of ["pages", "topbar", "navbar"]) assert.ok(!h.d.getElementById(id).hasAttribute("inert"));
+});
+
+test("replacing dialog content preserves its opener and removes a stale title reference", async t => {
+  const h = harness(t); await until(() => h.game.Store.ready());
+  const opener = h.d.querySelector('[data-nav="page-stage"]');
+  opener.focus();
+  h.game.showModal('<h3>加载中</h3><button>取消</button>');
+  h.game.showModal('<p>加载完成</p><button>关闭</button>');
+  const box = h.d.getElementById("modal-box");
+  assert.equal(box.hasAttribute("aria-labelledby"), false);
+  assert.equal(box.getAttribute("aria-label"), "游戏弹窗");
+  h.game.closeModal();
+  assert.equal(h.d.activeElement, opener);
+});
+
+test("Escape cannot dismiss an unconfirmed battle settlement", async t => {
+  const h = harness(t); await until(() => h.game.Store.ready());
+  h.game.stopPlayback();
+  await h.game.resumeBattle(await h.game.Store.startRun("s1"), true);
+  h.game.battle.playbackComplete = true;
+  h.game.showModal('<h3>结算待确认</h3><button>重试</button>');
+  h.d.activeElement.dispatchEvent(new h.w.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  assert.ok(!h.d.getElementById("modal-mask").classList.contains("hidden"));
+  assert.ok(h.d.getElementById("pages").hasAttribute("inert"));
+});
+
+test("sign-out closes dialogs and releases the background focus lock", async t => {
+  const h = harness(t); await until(() => h.game.Store.ready());
+  h.game.showModal('<h3>角色详情</h3><button>关闭</button>');
+  h.game.Store.clearSession();
+  assertLocked(h);
+  assert.ok(h.d.getElementById("modal-mask").classList.contains("hidden"));
+  for (const id of ["pages", "topbar", "navbar"]) assert.ok(!h.d.getElementById(id).hasAttribute("inert"));
+});
+
+test("late warehouse replies cannot reopen or replace a dismissed dialog", async t => {
+  for (const action of ["close", "replace", "newer request", "failed request"]) await t.test(action, async t => {
+    const pending = deferred();
+    const h = harness(t); await until(() => h.game.Store.ready());
+    h.respond((call, next) => call.path === ep.warehouse ? pending.promise : next(call));
+    const loading = h.game.openWarehouse();
+    await until(() => h.count(ep.warehouse) === 1);
+    if (action === "replace") h.game.openGirl("c08");
+    else if (action === "newer request") {
+      h.respond((call, next) => call.path === ep.warehouse ? ok({ cards: [], active: { name: "较新的仓库", discount: 10 } }) : next(call));
+      await h.game.openWarehouse();
+    } else h.game.closeModal();
+    const content = h.d.getElementById("modal-box").innerHTML;
+    pending.resolve(action === "failed request" ? fail(503, "WAREHOUSE_UNAVAILABLE") : ok({ cards: [], active: null }));
+    await loading;
+    assert.equal(h.d.getElementById("modal-box").innerHTML, content);
+    assert.equal(h.d.getElementById("modal-mask").classList.contains("hidden"), ["close", "failed request"].includes(action));
+  });
+});
+
+test("warehouse text and activation IDs stay inert even when they contain markup", async t => {
+  const name = '<img src=x onerror="bad()">';
+  const cardId = "card' onclick='bad()";
+  const h = harness(t); await until(() => h.game.Store.ready());
+  h.respond((call, next) => call.path === ep.warehouse ? ok({
+    active: { name, discount: '<svg onload="bad()">', expire_at: Date.now() + 60000 },
+    cards: [{ id: cardId, name, discount: 10, duration_min: 30, status: "stored" },
+      { name, discount: 5, status: "expired" }],
+  }) : next(call));
+  await h.game.openWarehouse();
+  const box = h.d.getElementById("modal-box");
+  assert.equal(box.querySelector("img, svg"), null);
+  assert.ok(box.textContent.includes(name));
+  const activate = box.querySelector("[data-card-id]");
+  assert.equal(activate.dataset.cardId, cardId);
+  assert.equal(activate.hasAttribute("onclick"), false);
+  activate.disabled = false;
+  activate.click();
+  await until(() => h.count(ep.activate) === 1);
+  assert.deepEqual(h.calls.find(call => call.path === ep.activate).body, { card_id: cardId });
+});
+
+test("activation refreshes account data without reopening a closed warehouse", async t => {
+  const pending = deferred();
+  const h = harness(t); await until(() => h.game.Store.ready());
+  await h.game.openWarehouse();
+  h.respond((call, next) => call.path === ep.activate ? pending.promise : next(call));
+  const activation = h.game.activateCard("stored-card");
+  await until(() => h.count(ep.activate) === 1);
+  h.game.closeModal();
+  pending.resolve(ok({ id: "stored-card", name: "已激活卡片" }));
+  await activation;
+  assert.equal(h.count(ep.profile), 2, "The account still refreshes after activation");
+  assert.equal(h.count(ep.warehouse), 1, "A dismissed warehouse is not requested again");
+  assert.ok(h.d.getElementById("modal-mask").classList.contains("hidden"));
 });
 
 test("anonymous boot and deep links cannot render or use any game entry", async t => {
